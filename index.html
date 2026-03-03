@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kerb &amp; Channel Flow Capacity — QUDM</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface2: #1e2230;
+    --border: #2a2f3e;
+    --text: #d4d8e8;
+    --text-dim: #7a829e;
+    --text-bright: #eef0f8;
+    --accent: #3b9eff;
+    --accent-dim: #1e3a5c;
+    --warn: #f5a623;
+    --warn-dim: #3d2e10;
+    --fail: #e8524a;
+    --fail-dim: #3d1614;
+    --pass: #34c77b;
+    --pass-dim: #0f3322;
+    --water: #2a7fff;
+    --water-fill: rgba(42,127,255,0.18);
+    --kerb-fill: #5a6078;
+    --channel-fill: #3a3f52;
+    --road-fill: #2e3242;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { font-size:14px; }
+  body {
+    font-family:'DM Sans',system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.5;
+    min-height:100vh;
+  }
+  .app-header {
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    padding:1rem 2rem;
+    display:flex; align-items:center; gap:1rem;
+  }
+  .app-header h1 {
+    font-size:1.15rem; font-weight:700; color:var(--text-bright);
+    letter-spacing:-0.02em;
+  }
+  .app-header .badge {
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.7rem; font-weight:500;
+    background:var(--accent-dim); color:var(--accent);
+    padding:0.2rem 0.55rem; border-radius:4px;
+  }
+  .main { max-width:1400px; margin:0 auto; padding:1.5rem 2rem 3rem; }
+
+  .input-panel {
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
+    gap:1rem;
+    margin-bottom:1.5rem;
+  }
+  .input-group {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:1rem 1.25rem;
+  }
+  .input-group h3 {
+    font-size:0.75rem; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--accent); margin-bottom:0.75rem;
+  }
+  .field { margin-bottom:0.6rem; }
+  .field:last-child { margin-bottom:0; }
+  .field label {
+    display:block; font-size:0.78rem; color:var(--text-dim);
+    margin-bottom:0.2rem; font-weight:500;
+  }
+  .field-row { display:flex; gap:0.5rem; align-items:center; }
+  .field input[type="number"], .field select {
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.85rem;
+    background:var(--surface2);
+    border:1px solid var(--border);
+    color:var(--text-bright);
+    padding:0.4rem 0.6rem;
+    border-radius:5px;
+    width:100%;
+    outline:none;
+    transition:border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color:var(--accent); }
+  .field .unit {
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.75rem; color:var(--text-dim);
+    white-space:nowrap; min-width:2.5rem;
+  }
+  .field select { cursor:pointer; }
+  .field select option { background:var(--surface2); }
+
+  .btn-calc {
+    display:inline-flex; align-items:center; gap:0.5rem;
+    background:var(--accent); color:#fff;
+    font-family:'DM Sans',sans-serif;
+    font-size:0.85rem; font-weight:600;
+    border:none; border-radius:6px;
+    padding:0.6rem 1.5rem; cursor:pointer;
+    transition:background 0.15s, transform 0.1s;
+    margin-bottom:1.5rem;
+  }
+  .btn-calc:hover { background:#2b8bee; }
+  .btn-calc:active { transform:scale(0.98); }
+
+  .section-title {
+    font-size:0.9rem; font-weight:700; color:var(--text-bright);
+    margin-bottom:0.75rem;
+    display:flex; align-items:center; gap:0.6rem;
+  }
+  .section-title::before {
+    content:''; display:block;
+    width:3px; height:1rem; background:var(--accent);
+    border-radius:2px;
+  }
+
+  .svg-wrap {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:1rem;
+    margin-bottom:1.5rem;
+    overflow-x:auto;
+  }
+  .svg-wrap svg { width:100%; height:auto; min-height:260px; }
+  .depth-slider-row {
+    display:flex; align-items:center; gap:1rem;
+    margin-top:0.75rem; padding:0 0.5rem;
+  }
+  .depth-slider-row label {
+    font-size:0.78rem; color:var(--text-dim); font-weight:500; white-space:nowrap;
+  }
+  .depth-slider-row input[type="range"] { flex:1; accent-color:var(--accent); }
+  .depth-slider-row .depth-val {
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.82rem; color:var(--accent);
+    min-width:5rem; text-align:right;
+  }
+
+  .summary-row {
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(155px,1fr));
+    gap:0.75rem;
+    margin-bottom:1.5rem;
+  }
+  .s-card {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:0.75rem 1rem;
+  }
+  .s-card .s-label {
+    font-size:0.7rem; color:var(--text-dim);
+    text-transform:uppercase; letter-spacing:0.04em; font-weight:600;
+  }
+  .s-card .s-value {
+    font-family:'JetBrains Mono',monospace;
+    font-size:1.3rem; font-weight:700; color:var(--text-bright);
+    margin-top:0.15rem;
+  }
+  .s-card .s-unit { font-size:0.75rem; font-weight:400; color:var(--text-dim); }
+  .s-card.warn { border-color:var(--warn); background:var(--warn-dim); }
+  .s-card.warn .s-value { color:var(--warn); }
+  .s-card.fail { border-color:var(--fail); background:var(--fail-dim); }
+  .s-card.fail .s-value { color:var(--fail); }
+  .s-card.pass { border-color:var(--pass); background:var(--pass-dim); }
+  .s-card.pass .s-value { color:var(--pass); }
+
+  .table-wrap {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    overflow-x:auto;
+    margin-bottom:1.5rem;
+  }
+  table { width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:0.78rem; }
+  thead th {
+    background:var(--surface2);
+    color:var(--text-dim);
+    font-weight:600; font-size:0.7rem;
+    text-transform:uppercase; letter-spacing:0.04em;
+    padding:0.6rem 0.75rem;
+    text-align:right;
+    border-bottom:1px solid var(--border);
+    white-space:nowrap;
+    position:sticky; top:0;
+  }
+  thead th:first-child { text-align:left; }
+  tbody td {
+    padding:0.45rem 0.75rem;
+    text-align:right;
+    border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  tbody td:first-child { text-align:left; color:var(--text-bright); font-weight:500; }
+  tbody tr:hover { background:rgba(59,158,255,0.04); }
+  .dv-cell { font-weight:600; }
+  .dv-ok { color:var(--pass); }
+  .dv-warn { color:var(--warn); }
+  .dv-fail { color:var(--fail); }
+
+  .ref-section { margin-top:2rem; }
+  .ref-table { width:100%; border-collapse:collapse; font-size:0.8rem; font-family:'DM Sans',sans-serif; }
+  .ref-table th {
+    background:var(--surface2);
+    font-weight:600; font-size:0.72rem;
+    text-transform:uppercase; letter-spacing:0.03em;
+    color:var(--text-dim);
+    padding:0.55rem 0.75rem;
+    text-align:left;
+    border-bottom:1px solid var(--border);
+  }
+  .ref-table td {
+    padding:0.45rem 0.75rem;
+    border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  .ref-table td.n-val {
+    font-family:'JetBrains Mono',monospace;
+    color:var(--text-bright); font-weight:500;
+  }
+  .ref-note {
+    font-size:0.75rem; color:var(--text-dim);
+    margin-top:0.75rem; line-height:1.7;
+  }
+  .ref-note a { color:var(--accent); text-decoration:none; }
+  .ref-note a:hover { text-decoration:underline; }
+  .ref-note strong { color:var(--text); }
+
+  @media(max-width:700px) {
+    .main { padding:1rem; }
+    .input-panel { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <h1>Kerb &amp; Channel Flow Capacity</h1>
+  <span class="badge">QUDM Method</span>
+</div>
+
+<div class="main">
+
+  <div class="input-panel">
+    <div class="input-group">
+      <h3>Kerb Geometry</h3>
+      <div class="field">
+        <label>Kerb Height</label>
+        <div class="field-row">
+          <input type="number" id="kerbHeight" value="150" step="5" min="50" max="300">
+          <span class="unit">mm</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Kerb Angle from Vertical</label>
+        <div class="field-row">
+          <input type="number" id="kerbAngle" value="0" step="1" min="0" max="45">
+          <span class="unit">deg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <h3>Channel (Gutter)</h3>
+      <div class="field">
+        <label>Channel Width</label>
+        <div class="field-row">
+          <input type="number" id="channelWidth" value="450" step="10" min="100" max="1500">
+          <span class="unit">mm</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Channel Crossfall</label>
+        <div class="field-row">
+          <input type="number" id="channelSlope" value="10" step="0.5" min="1" max="25">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Channel / Kerb Surface</label>
+        <select id="channelSurface">
+          <option value="0.011">Concrete (smooth trowel)</option>
+          <option value="0.013" selected>Concrete (formed / float finish)</option>
+          <option value="0.015">Concrete (rough)</option>
+          <option value="0.013">Asphalt (smooth)</option>
+          <option value="0.016">Asphalt (coarse)</option>
+          <option value="0.015">Brick / paver</option>
+          <option value="0.020">Gravel</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <h3>Road Pavement</h3>
+      <div class="field">
+        <label>Road Crossfall</label>
+        <div class="field-row">
+          <input type="number" id="roadCrossfall" value="3" step="0.5" min="1" max="10">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Half-Road Width (kerb to crown)</label>
+        <div class="field-row">
+          <input type="number" id="halfRoadWidth" value="4500" step="100" min="1000" max="15000">
+          <span class="unit">mm</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Road Surface</label>
+        <select id="roadSurface">
+          <option value="0.011">Concrete (smooth trowel)</option>
+          <option value="0.013">Concrete (formed / float finish)</option>
+          <option value="0.015">Concrete (rough)</option>
+          <option value="0.013" selected>Asphalt (smooth)</option>
+          <option value="0.016">Asphalt (coarse)</option>
+          <option value="0.015">Brick / paver</option>
+          <option value="0.020">Gravel</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <h3>Longitudinal Grade</h3>
+      <div class="field">
+        <label>Longitudinal Slope</label>
+        <div class="field-row">
+          <input type="number" id="longSlope" value="1.0" step="0.1" min="0.1" max="15">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Depth Increment for Table</label>
+        <div class="field-row">
+          <input type="number" id="depthStep" value="10" step="5" min="5" max="50">
+          <span class="unit">mm</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-calc" onclick="calculate()">&#9654; Calculate Capacities</button>
+
+  <div class="section-title">Cross-Section</div>
+  <div class="svg-wrap">
+    <svg id="xsec" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="depth-slider-row">
+      <label>Display Depth:</label>
+      <input type="range" id="depthSlider" min="0" max="150" step="1" value="100" oninput="updateSlider()">
+      <span class="depth-val" id="depthSliderVal">100 mm</span>
+    </div>
+  </div>
+
+  <div class="section-title">Capacity at Kerb-Full Depth</div>
+  <div class="summary-row" id="summaryRow"></div>
+
+  <div class="section-title">Flow Capacity Table</div>
+  <div class="table-wrap" style="max-height:500px; overflow-y:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Depth (mm)</th>
+          <th>Spread (m)</th>
+          <th>Area (m&sup2;)</th>
+          <th>Wet. P. (m)</th>
+          <th>Hyd. R. (m)</th>
+          <th>n<sub>comp</sub></th>
+          <th>V (m/s)</th>
+          <th>Q (L/s)</th>
+          <th>Q (m&sup3;/s)</th>
+          <th>d&times;V (m&sup2;/s)</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="ref-section">
+    <div class="section-title">Manning's Roughness Coefficients — Reference</div>
+    <div class="table-wrap">
+      <table class="ref-table">
+        <thead>
+          <tr><th>Surface Type</th><th>Manning's n</th><th>Notes / Source</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Concrete — smooth trowel finish</td><td class="n-val">0.011</td><td>QUDM Table 7.4.1; smooth steel-trowelled surface</td></tr>
+          <tr><td>Concrete — formed / float finish</td><td class="n-val">0.013</td><td>QUDM Table 7.4.1; typical kerb &amp; channel</td></tr>
+          <tr><td>Concrete — rough finish</td><td class="n-val">0.015</td><td>QUDM Table 7.4.1; broom or exposed aggregate</td></tr>
+          <tr><td>Asphalt — smooth (dense graded)</td><td class="n-val">0.013</td><td>QUDM Table 7.4.1; new dense-graded asphalt</td></tr>
+          <tr><td>Asphalt — coarse (open graded)</td><td class="n-val">0.016</td><td>QUDM Table 7.4.1; open graded or aged surface</td></tr>
+          <tr><td>Brick / concrete paver</td><td class="n-val">0.015</td><td>QUDM Table 7.4.1</td></tr>
+          <tr><td>Gravel surface</td><td class="n-val">0.020</td><td>QUDM Table 7.4.1; loose gravel or unsealed</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ref-note">
+      <strong>References &amp; Standards:</strong><br>
+      <strong>[1]</strong> Queensland Urban Drainage Manual (QUDM), 4th Edition, 2017 — Dept. of Energy &amp; Water Supply, Queensland Government.
+      Chapter 7: Street Drainage, Section 7.4 Kerb &amp; Channel Flow.<br>
+      <strong>[2]</strong> QUDM Table 7.4.1 — Manning's roughness coefficients for roadway and channel surfaces.<br>
+      <strong>[3]</strong> QUDM Section 7.4.2 — Flow capacity calculation using Manning's equation for compound kerb-and-gutter cross-sections.
+      Composite roughness via Horton's weighted perimeter method (Horton, 1933).<br>
+      <strong>[4]</strong> QUDM Table 7.4.2 — Depth&ndash;velocity product limits for pedestrian safety:
+      d&times;V &le; 0.4&nbsp;m&sup2;/s (general), d&times;V &le; 0.6&nbsp;m&sup2;/s (major storm, no pedestrian access).<br>
+      <strong>[5]</strong> Manning, R. (1891). <em>On the flow of water in open channels and pipes.</em> Trans. Inst. Civil Engineers of Ireland, 20, 161&ndash;207.<br>
+      <strong>[6]</strong> Horton, R.E. (1933). Separate roughness coefficients for channel bottom and sides. <em>Engineering News-Record</em>, 111(22), 652&ndash;653.<br>
+      <strong>[7]</strong> AS/NZS 3500.3:2018 — Plumbing and Drainage, Part 3: Stormwater Drainage.<br>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function getParams() {
+  return {
+    H_k:   parseFloat(document.getElementById('kerbHeight').value) / 1000,
+    theta: parseFloat(document.getElementById('kerbAngle').value) * Math.PI / 180,
+    W_c:   parseFloat(document.getElementById('channelWidth').value) / 1000,
+    S_ch:  parseFloat(document.getElementById('channelSlope').value) / 100,
+    S_x:   parseFloat(document.getElementById('roadCrossfall').value) / 100,
+    W_r:   parseFloat(document.getElementById('halfRoadWidth').value) / 1000,
+    n_ch:  parseFloat(document.getElementById('channelSurface').value),
+    n_rd:  parseFloat(document.getElementById('roadSurface').value),
+    S_L:   parseFloat(document.getElementById('longSlope').value) / 100,
+    dStep: parseFloat(document.getElementById('depthStep').value) / 1000,
+  };
+}
+
+/**
+ * Compute flow properties at depth d (m) at the kerb face.
+ *
+ * Cross-section model (looking upstream, origin at channel invert at kerb base):
+ *   Kerb face: battered at angle theta from vertical, up to height H_k
+ *   Channel:   width W_c, cross-slope S_ch (rises away from kerb)
+ *   Road:      crossfall S_x, width W_r from channel outer edge to crown
+ *
+ * Manning's equation: Q = (1/n) * A * R^(2/3) * S_L^(1/2)
+ * Composite n via Horton: n_c = [sum(P_i * n_i^1.5) / P_total]^(2/3)
+ */
+function computeFlow(d, p) {
+  if (d <= 0) return { d:0, A:0, P:0, R:0, n_c:0, V:0, Q:0, spread:0, dV:0 };
+
+  const { H_k, theta, W_c, S_ch, S_x, W_r, n_ch, n_rd, S_L } = p;
+  const depth = Math.min(d, H_k);
+
+  const d_ch_edge = S_ch * W_c; // elevation rise across channel
+
+  // Kerb face
+  const dx_kerb = depth * Math.tan(theta);
+  const A_kerb  = 0.5 * depth * dx_kerb;
+  const P_kerb  = depth / Math.cos(theta);
+
+  let A_ch = 0, P_ch = 0, A_rd = 0, P_rd = 0;
+  let T_ch = 0, T_rd = 0;
+
+  if (depth <= d_ch_edge) {
+    // Water contained within channel
+    T_ch = depth / S_ch;
+    A_ch = 0.5 * depth * T_ch;
+    P_ch = T_ch * Math.sqrt(1 + S_ch * S_ch);
+  } else {
+    // Water fills channel and spreads onto road
+    T_ch = W_c;
+    const d_outer = depth - d_ch_edge;
+    A_ch = 0.5 * (depth + d_outer) * W_c;
+    P_ch = W_c * Math.sqrt(1 + S_ch * S_ch);
+
+    T_rd = Math.min(d_outer / S_x, W_r);
+    const d_rd_far = d_outer - S_x * T_rd;
+    A_rd = 0.5 * (d_outer + Math.max(d_rd_far, 0)) * T_rd;
+    P_rd = T_rd * Math.sqrt(1 + S_x * S_x);
+  }
+
+  const A_total = A_kerb + A_ch + A_rd;
+  const P_total = P_kerb + P_ch + P_rd;
+
+  if (A_total <= 1e-12 || P_total <= 1e-12) {
+    return { d: depth, A:0, P:0, R:0, n_c: n_ch, V:0, Q:0, spread:0, dV:0 };
+  }
+
+  const R = A_total / P_total;
+
+  // Horton composite Manning's n
+  const n_kerb = n_ch;
+  const sum_Pn = P_kerb * Math.pow(n_kerb, 1.5)
+               + P_ch   * Math.pow(n_ch,   1.5)
+               + P_rd   * Math.pow(n_rd,   1.5);
+  let n_c = Math.pow(sum_Pn / P_total, 2/3);
+  if (isNaN(n_c) || n_c <= 0) n_c = n_ch;
+
+  const V = (1 / n_c) * Math.pow(R, 2/3) * Math.pow(S_L, 0.5);
+  const Q = V * A_total;
+  const spread = dx_kerb + T_ch + T_rd;
+  const dV = depth * V;
+
+  return { d: depth, A: A_total, P: P_total, R, n_c, V, Q, spread, dV };
+}
+
+// ---- SVG Cross-section ----
+function drawSection(displayDepth_m) {
+  const p = getParams();
+  const svg = document.getElementById('xsec');
+  const { H_k, theta, W_c, S_ch, S_x, W_r } = p;
+
+  const H  = H_k * 1000;
+  const Wc = W_c * 1000;
+  const Wr = W_r * 1000;
+  const dkx = H * Math.tan(theta);
+  const chRise = S_ch * Wc;
+  const rdRise = S_x  * Wr;
+
+  // Profile points (mm coords, y=0 at invert, positive up)
+  const pts = [
+    { x: -dkx - 40, y: H + 50 },  // kerb back
+    { x: -dkx,      y: H },        // kerb top face
+    { x: 0,         y: 0 },        // invert
+    { x: Wc,        y: chRise },    // channel outer edge
+    { x: Wc + Wr,   y: chRise + rdRise }, // crown
+    { x: Wc + Wr + 80, y: chRise + rdRise + S_x * 80 }, // beyond
+  ];
+
+  const padL = 80, padR = 40, padT = 55, padB = 75;
+  const svgW = 900, svgH = 300;
+  const drawW = svgW - padL - padR;
+  const drawH = svgH - padT - padB;
+
+  const xs = pts.map(p => p.x);
+  const ys = pts.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys) - 10, maxY = Math.max(...ys) + 10;
+
+  const sc = Math.min(drawW / (maxX - minX), drawH / (maxY - minY));
+  const tx = x => padL + (x - minX) * sc;
+  const ty = y => padT + drawH - (y - minY) * sc;
+
+  let html = '';
+
+  // Ground fill
+  const gf = pts.map(pt => `${tx(pt.x)},${ty(pt.y)}`);
+  gf.push(`${tx(pts[pts.length-1].x)},${ty(minY)}`);
+  gf.push(`${tx(pts[0].x)},${ty(minY)}`);
+  html += `<polygon points="${gf.join(' ')}" fill="var(--surface2)"/>`;
+
+  // Kerb block
+  html += `<polygon points="${tx(-dkx-40)},${ty(H+50)} ${tx(-dkx)},${ty(H)} ${tx(0)},${ty(0)} ${tx(0)},${ty(minY)} ${tx(-dkx-40)},${ty(minY)}" fill="var(--kerb-fill)" opacity="0.45"/>`;
+  // Channel zone
+  html += `<polygon points="${tx(0)},${ty(0)} ${tx(Wc)},${ty(chRise)} ${tx(Wc)},${ty(minY)} ${tx(0)},${ty(minY)}" fill="var(--channel-fill)" opacity="0.35"/>`;
+  // Road zone
+  html += `<polygon points="${tx(Wc)},${ty(chRise)} ${tx(Wc+Wr)},${ty(chRise+rdRise)} ${tx(Wc+Wr)},${ty(minY)} ${tx(Wc)},${ty(minY)}" fill="var(--road-fill)" opacity="0.35"/>`;
+
+  // Water
+  const dd = Math.min(displayDepth_m * 1000, H);
+  if (dd > 0.5) {
+    const wkx = dd * Math.tan(theta);
+    const dChE = S_ch * Wc;
+    let wrx;
+    if (dd <= dChE) {
+      wrx = dd / S_ch;
+    } else {
+      const dO = dd - dChE;
+      wrx = Wc + Math.min(dO / S_x, Wr);
+    }
+
+    let wp = [];
+    wp.push(`${tx(-wkx)},${ty(dd)}`);
+    wp.push(`${tx(wrx)},${ty(dd)}`);
+    // trace bottom
+    if (wrx > Wc) {
+      wp.push(`${tx(wrx)},${ty(chRise + S_x * (wrx - Wc))}`);
+      wp.push(`${tx(Wc)},${ty(chRise)}`);
+    } else {
+      wp.push(`${tx(wrx)},${ty(S_ch * wrx)}`);
+    }
+    wp.push(`${tx(0)},${ty(0)}`);
+    wp.push(`${tx(-wkx)},${ty(dd)}`);
+    html += `<polygon points="${wp.join(' ')}" fill="var(--water-fill)"/>`;
+    html += `<line x1="${tx(-wkx)}" y1="${ty(dd)}" x2="${tx(wrx)}" y2="${ty(dd)}" stroke="var(--water)" stroke-width="2" stroke-dasharray="6,3"/>`;
+
+    // Depth label
+    const wdX = tx(0) + 14;
+    html += `<line x1="${wdX}" y1="${ty(0)}" x2="${wdX}" y2="${ty(dd)}" stroke="var(--water)" stroke-width="1.5"/>`;
+    html += `<text x="${wdX+6}" y="${(ty(0)+ty(dd))/2}" dominant-baseline="middle" fill="var(--water)" font-family="JetBrains Mono,monospace" font-size="10" font-weight="600">${dd.toFixed(0)} mm</text>`;
+
+    // Spread label
+    html += `<line x1="${tx(-wkx)}" y1="${ty(dd)-10}" x2="${tx(wrx)}" y2="${ty(dd)-10}" stroke="var(--water)" stroke-width="0.8" opacity="0.6"/>`;
+    const sMid = (tx(-wkx) + tx(wrx)) / 2;
+    const spreadM = (wkx + wrx) / 1000;
+    html += `<text x="${sMid}" y="${ty(dd)-14}" text-anchor="middle" fill="var(--water)" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.8">spread ${spreadM.toFixed(2)} m</text>`;
+  }
+
+  // Profile line
+  html += `<polyline points="${pts.map(pt=>`${tx(pt.x)},${ty(pt.y)}`).join(' ')}" fill="none" stroke="var(--text)" stroke-width="2"/>`;
+  // Kerb face bold
+  html += `<line x1="${tx(-dkx)}" y1="${ty(H)}" x2="${tx(0)}" y2="${ty(0)}" stroke="var(--text-bright)" stroke-width="2.5"/>`;
+
+  // Dimensions: channel width
+  const dimY1 = ty(minY) + 16;
+  html += drawDim(tx(0), tx(Wc), dimY1, `${Wc.toFixed(0)} ch`, 'var(--accent)', ty(maxY));
+  html += drawDim(tx(Wc), tx(Wc+Wr), dimY1 + 20, `${Wr.toFixed(0)} road`, 'var(--text-dim)', ty(maxY));
+
+  // Kerb height
+  const khX = tx(-dkx) - 20;
+  html += `<line x1="${khX}" y1="${ty(0)}" x2="${khX}" y2="${ty(H)}" stroke="var(--warn)" stroke-width="1"/>`;
+  html += `<text x="${khX-5}" y="${(ty(0)+ty(H))/2}" text-anchor="end" dominant-baseline="middle" fill="var(--warn)" font-family="JetBrains Mono,monospace" font-size="10">${H.toFixed(0)} mm</text>`;
+
+  // Slope labels
+  html += `<text x="${tx(Wc/2)}" y="${ty(S_ch*Wc/2)-12}" text-anchor="middle" fill="var(--accent)" font-family="JetBrains Mono,monospace" font-size="9">${(S_ch*100).toFixed(1)}%</text>`;
+  html += `<text x="${tx(Wc+Wr/2)}" y="${ty(chRise+S_x*Wr/2)-12}" text-anchor="middle" fill="var(--text-dim)" font-family="JetBrains Mono,monospace" font-size="9">${(S_x*100).toFixed(1)}%</text>`;
+
+  // Zone labels
+  html += `<text x="${tx(-dkx/2)}" y="${ty(H*0.55)}" text-anchor="middle" fill="var(--text-dim)" font-family="DM Sans,sans-serif" font-size="10" font-weight="600">KERB</text>`;
+  html += `<text x="${tx(Wc/2)}" y="${ty(minY)-6}" text-anchor="middle" fill="var(--accent)" font-family="DM Sans,sans-serif" font-size="9" font-weight="600" opacity="0.6">CHANNEL</text>`;
+  html += `<text x="${tx(Wc+Wr/2)}" y="${ty(minY)-6}" text-anchor="middle" fill="var(--text-dim)" font-family="DM Sans,sans-serif" font-size="9" font-weight="600" opacity="0.6">ROAD</text>`;
+
+  if (theta > 0.01) {
+    html += `<text x="${tx(-dkx)}" y="${ty(H)-10}" text-anchor="middle" fill="var(--warn)" font-family="JetBrains Mono,monospace" font-size="9">${(theta*180/Math.PI).toFixed(0)}&deg;</text>`;
+  }
+
+  svg.innerHTML = html;
+}
+
+function drawDim(x1, x2, yPos, label, color, yTop) {
+  if (Math.abs(x2-x1) < 10) return '';
+  let s = '';
+  s += `<line x1="${x1}" y1="${yPos}" x2="${x2}" y2="${yPos}" stroke="${color}" stroke-width="1"/>`;
+  s += `<polygon points="${x1},${yPos} ${x1+5},${yPos-3} ${x1+5},${yPos+3}" fill="${color}"/>`;
+  s += `<polygon points="${x2},${yPos} ${x2-5},${yPos-3} ${x2-5},${yPos+3}" fill="${color}"/>`;
+  s += `<line x1="${x1}" y1="${yTop}" x2="${x1}" y2="${yPos+4}" stroke="${color}" stroke-width="0.4" stroke-dasharray="2,2"/>`;
+  s += `<line x1="${x2}" y1="${yTop}" x2="${x2}" y2="${yPos+4}" stroke="${color}" stroke-width="0.4" stroke-dasharray="2,2"/>`;
+  s += `<text x="${(x1+x2)/2}" y="${yPos-5}" text-anchor="middle" fill="${color}" font-family="JetBrains Mono,monospace" font-size="10">${label}</text>`;
+  return s;
+}
+
+// ---- Main calculation ----
+function calculate() {
+  const p = getParams();
+  const maxD = p.H_k;
+  const step = p.dStep;
+  const results = [];
+
+  for (let d = step; d <= maxD + 0.0001; d += step) {
+    results.push(computeFlow(d, p));
+  }
+  // Ensure kerb-full included
+  if (results.length === 0 || Math.abs(results[results.length-1].d - maxD) > 0.001) {
+    results.push(computeFlow(maxD, p));
+  }
+
+  // Table
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = results.map(r => {
+    const dvCls = r.dV <= 0.4 ? 'dv-ok' : r.dV <= 0.6 ? 'dv-warn' : 'dv-fail';
+    return `<tr>
+      <td>${(r.d*1000).toFixed(0)}</td>
+      <td>${r.spread.toFixed(3)}</td>
+      <td>${r.A.toFixed(5)}</td>
+      <td>${r.P.toFixed(4)}</td>
+      <td>${r.R.toFixed(5)}</td>
+      <td>${r.n_c.toFixed(4)}</td>
+      <td>${r.V.toFixed(3)}</td>
+      <td>${(r.Q*1000).toFixed(2)}</td>
+      <td>${r.Q.toFixed(5)}</td>
+      <td class="dv-cell ${dvCls}">${r.dV.toFixed(4)}</td>
+    </tr>`;
+  }).join('');
+
+  // Summary
+  const kf = results[results.length - 1];
+  const dvC = kf.dV <= 0.4 ? 'pass' : kf.dV <= 0.6 ? 'warn' : 'fail';
+  const dvL = kf.dV <= 0.4 ? '&le; 0.4 OK' : kf.dV <= 0.6 ? '&le; 0.6 Caution' : '> 0.6 Exceeds';
+  document.getElementById('summaryRow').innerHTML = `
+    <div class="s-card"><div class="s-label">Flow Rate</div><div class="s-value">${(kf.Q*1000).toFixed(1)} <span class="s-unit">L/s</span></div></div>
+    <div class="s-card"><div class="s-label">Velocity</div><div class="s-value">${kf.V.toFixed(2)} <span class="s-unit">m/s</span></div></div>
+    <div class="s-card"><div class="s-label">Flow Area</div><div class="s-value">${(kf.A*1e4).toFixed(1)} <span class="s-unit">cm&sup2;</span></div></div>
+    <div class="s-card"><div class="s-label">Spread</div><div class="s-value">${kf.spread.toFixed(2)} <span class="s-unit">m</span></div></div>
+    <div class="s-card ${dvC}"><div class="s-label">d&times;V (${dvL})</div><div class="s-value">${kf.dV.toFixed(3)} <span class="s-unit">m&sup2;/s</span></div></div>
+    <div class="s-card"><div class="s-label">Composite n</div><div class="s-value">${kf.n_c.toFixed(4)}</div></div>
+  `;
+
+  // Sync slider
+  const slider = document.getElementById('depthSlider');
+  slider.max = p.H_k * 1000;
+  if (parseFloat(slider.value) > p.H_k * 1000) slider.value = p.H_k * 1000;
+  updateSlider();
+}
+
+function updateSlider() {
+  const d_mm = parseFloat(document.getElementById('depthSlider').value);
+  document.getElementById('depthSliderVal').textContent = `${d_mm.toFixed(0)} mm`;
+  drawSection(d_mm / 1000);
+}
+
+window.addEventListener('DOMContentLoaded', calculate);
+</script>
+</body>
+</html>
