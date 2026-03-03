@@ -183,6 +183,22 @@
     overflow-x:auto;
     margin-bottom:1.5rem;
   }
+  .table-cap {
+    max-height:500px;
+    overflow-y:auto;
+  }
+
+  @media print {
+    .table-cap {
+      max-height:none;
+      overflow:visible;
+    }
+    .table-wrap {
+      overflow:visible;
+    }
+    table { page-break-inside:auto; }
+    tbody tr { page-break-inside:avoid; }
+  }
   table { width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:0.78rem; }
   thead th {
     background:var(--surface2);
@@ -366,7 +382,7 @@
   <div class="summary-row" id="summaryRow"></div>
 
   <div class="section-title">Flow Capacity Table</div>
-  <div class="table-wrap" style="max-height:500px; overflow-y:auto;">
+  <div class="table-wrap table-cap">
     <table>
       <thead>
         <tr>
