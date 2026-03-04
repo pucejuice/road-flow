@@ -99,6 +99,36 @@
     white-space:nowrap; min-width:2.5rem;
   }
   .field select { cursor:pointer; }
+  .grade-toggle {
+    display:inline-flex;
+    border:1px solid var(--border);
+    border-radius:5px;
+    overflow:hidden;
+    flex-shrink:0;
+  }
+  .grade-toggle button {
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.82rem;
+    font-weight:600;
+    padding:0.35rem 0.55rem;
+    border:none;
+    background:var(--surface2);
+    color:var(--text-dim);
+    cursor:pointer;
+    transition:background 0.15s, color 0.15s;
+    line-height:1;
+  }
+  .grade-toggle button.active {
+    background:var(--accent-dim);
+    color:var(--accent);
+  }
+  .grade-toggle button:first-child { border-right:1px solid var(--border); }
+  .grade-hint {
+    font-size:0.68rem;
+    color:var(--text-dim);
+    margin-top:0.15rem;
+    font-style:italic;
+  }
   .field select option { background:var(--surface2); }
 
   .btn-calc {
@@ -360,9 +390,14 @@
       <div class="field">
         <label>Verge Crossfall</label>
         <div class="field-row">
+          <div class="grade-toggle" id="vergeSlopeSign">
+            <button type="button" onclick="setGradeSign('vergeSlopeSign',1)">+</button>
+            <button type="button" class="active" onclick="setGradeSign('vergeSlopeSign',-1)">−</button>
+          </div>
           <input type="number" id="vergeSlope" value="4" step="0.5" min="0.5" max="20">
           <span class="unit">%</span>
         </div>
+        <div class="grade-hint" id="vergeSlopeHint">Falls toward road</div>
       </div>
       <div class="field">
         <label>Verge Surface</label>
@@ -383,9 +418,14 @@
       <div class="field">
         <label>Road Crossfall</label>
         <div class="field-row">
-          <input type="number" id="roadCrossfall" value="3" step="0.5" min="1" max="10">
+          <div class="grade-toggle" id="roadCrossfallSign">
+            <button type="button" class="active" onclick="setGradeSign('roadCrossfallSign',1)">+</button>
+            <button type="button" onclick="setGradeSign('roadCrossfallSign',-1)">−</button>
+          </div>
+          <input type="number" id="roadCrossfall" value="3" step="0.5" min="0.5" max="10">
           <span class="unit">%</span>
         </div>
+        <div class="grade-hint" id="roadCrossfallHint">Rises to crown</div>
       </div>
       <div class="field">
         <label>Half-Road Width (kerb to crown)</label>
@@ -514,6 +554,31 @@
 </div>
 
 <script>
+// ── Grade sign toggles ──
+function setGradeSign(id, sign) {
+  const el = document.getElementById(id);
+  const btns = el.querySelectorAll('button');
+  btns.forEach(b => b.classList.remove('active'));
+  if (sign > 0) btns[0].classList.add('active');
+  else btns[1].classList.add('active');
+  el.dataset.sign = sign;
+
+  // Update hint text
+  if (id === 'vergeSlopeSign') {
+    document.getElementById('vergeSlopeHint').textContent =
+      sign > 0 ? 'Falls away from road' : 'Falls toward road';
+  } else if (id === 'roadCrossfallSign') {
+    document.getElementById('roadCrossfallHint').textContent =
+      sign > 0 ? 'Rises to crown' : 'Falls to crown (superelevation)';
+  }
+  if (typeof calculate === 'function') calculate();
+}
+
+function getGradeSign(id) {
+  const el = document.getElementById(id);
+  return parseFloat(el.dataset.sign || (id === 'vergeSlopeSign' ? '-1' : '1'));
+}
+
 function getParams() {
   return {
     H_k:   parseFloat(document.getElementById('kerbHeight').value) / 1000,
@@ -521,9 +586,9 @@ function getParams() {
     W_c:   parseFloat(document.getElementById('channelWidth').value) / 1000,
     S_ch:  parseFloat(document.getElementById('channelSlope').value) / 100,
     L_v:   parseFloat(document.getElementById('vergeWidth').value) / 1000,
-    S_v:   parseFloat(document.getElementById('vergeSlope').value) / 100,
+    S_v:   parseFloat(document.getElementById('vergeSlope').value) / 100 * getGradeSign('vergeSlopeSign'),
     n_vg:  parseFloat(document.getElementById('vergeSurface').value),
-    S_x:   parseFloat(document.getElementById('roadCrossfall').value) / 100,
+    S_x:   parseFloat(document.getElementById('roadCrossfall').value) / 100 * getGradeSign('roadCrossfallSign'),
     W_r:   parseFloat(document.getElementById('halfRoadWidth').value) / 1000,
     n_ch:  parseFloat(document.getElementById('channelSurface').value),
     n_rd:  parseFloat(document.getElementById('roadSurface').value),
@@ -539,11 +604,11 @@ function getParams() {
  *   Verge:     on outside/left of kerb — only contributes when d > H_k (overtopping)
  *   Kerb top:  100 mm flat section at top of kerb
  *   Kerb face: battered at angle theta from vertical, up to height H_k
- *   Channel:   width W_c, cross-slope S_ch (rises away from kerb)
+ *   Channel:   width W_c, cross-slope S_ch (always positive, rises away from kerb)
  *   Road:      crossfall S_x, width W_r from channel outer edge to crown
+ *              S_x > 0 = rises to crown (normal); S_x < 0 = falls to crown (superelevation)
  *
- * When d <= H_k: kerb retains water on road side only.
- * When d > H_k:  water overtops kerb, flowing over flat top and onto verge.
+ *   Verge:     S_v > 0 = falls away from road; S_v < 0 = falls toward road
  *
  * Manning's equation: Q = (1/n) * A * R^(2/3) * S_L^(1/2)
  * Composite n via Horton: n_c = [sum(P_i * n_i^1.5) / P_total]^(2/3)
@@ -559,39 +624,54 @@ function computeFlow(d, p) {
 
   // ── Kerb face ──
   let dx_kerb, A_kerb, P_kerb;
+  let A_above_kerb = 0;
   if (depth <= H_k) {
     dx_kerb = depth * Math.tan(theta);
     A_kerb  = 0.5 * depth * dx_kerb;
     P_kerb  = theta > 0.001 ? depth / Math.cos(theta) : 0;
   } else {
-    // Kerb face fully submerged
     dx_kerb = H_k * Math.tan(theta);
     A_kerb  = 0.5 * H_k * dx_kerb;
     P_kerb  = theta > 0.001 ? H_k / Math.cos(theta) : 0;
+    A_above_kerb = dx_kerb * (depth - H_k);
   }
 
   // ── Overtopping: flat kerb top + verge (d > H_k) ──
   let A_top = 0, P_top = 0;
-  let A_vg = 0, P_vg = 0;
+  let A_vg = 0, P_vg = 0, T_vg = 0;
   if (depth > H_k) {
     const overtop = depth - H_k;
     // Flat kerb top (100 mm wide)
     A_top = kbFlat * overtop;
     P_top = kbFlat;
 
-    // Verge: slopes down from kerb back at grade S_v
-    // At kerb back, depth = overtop
-    // At distance x along verge, bed elevation = H_k - S_v*x
-    //   → depth = d - (H_k - S_v*x) = overtop + S_v*x (deepens away)
+    // Verge: bed at distance x from kerb back = H_k - S_v*x
+    //   S_v > 0: bed drops away (verge falls away from road)
+    //            depth at x = overtop + S_v*x (deepens) → always fully wet
+    //   S_v < 0: bed rises away (verge falls toward road)
+    //            depth at x = overtop + S_v*x = overtop - |S_v|*x (shallows)
+    //            zero depth at x = overtop / |S_v|
     if (L_v > 0.001) {
-      const d_vg_near = overtop;
-      const d_vg_far  = overtop + S_v * L_v;
-      A_vg = 0.5 * (d_vg_near + d_vg_far) * L_v;
-      P_vg = L_v * Math.sqrt(1 + S_v * S_v);
+      if (S_v >= 0) {
+        // Verge falls away from road — fully wet, deepens
+        T_vg = L_v;
+        const d_vg_near = overtop;
+        const d_vg_far  = overtop + S_v * L_v;
+        A_vg = 0.5 * (d_vg_near + d_vg_far) * L_v;
+        P_vg = L_v * Math.sqrt(1 + S_v * S_v);
+      } else {
+        // Verge falls toward road — shallows going away, may be partial
+        const absS = Math.abs(S_v);
+        T_vg = Math.min(L_v, overtop / absS);
+        const d_vg_near = overtop;
+        const d_vg_far  = overtop - absS * T_vg; // ≥ 0
+        A_vg = 0.5 * (d_vg_near + Math.max(d_vg_far, 0)) * T_vg;
+        P_vg = T_vg * Math.sqrt(1 + S_v * S_v);
+      }
     }
   }
 
-  // ── Channel ──
+  // ── Channel (S_ch always positive) ──
   let A_ch = 0, P_ch = 0, T_ch = 0;
   let A_rd = 0, P_rd = 0, T_rd = 0;
 
@@ -606,13 +686,22 @@ function computeFlow(d, p) {
     P_ch = W_c * Math.sqrt(1 + S_ch * S_ch);
 
     // ── Road ──
-    T_rd = Math.min(d_ch_out / S_x, W_r);
-    const d_rd_far = d_ch_out - S_x * T_rd;
-    A_rd = 0.5 * (d_ch_out + Math.max(d_rd_far, 0)) * T_rd;
+    // S_x > 0: road rises to crown — water triangle, spread limited
+    // S_x < 0: road falls to crown (super) — deepens, always full width
+    if (S_x > 0) {
+      T_rd = Math.min(d_ch_out / S_x, W_r);
+      const d_rd_far = d_ch_out - S_x * T_rd;
+      A_rd = 0.5 * (d_ch_out + Math.max(d_rd_far, 0)) * T_rd;
+    } else {
+      // Superelevation: water covers full road, deepens to crown
+      T_rd = W_r;
+      const d_rd_far = d_ch_out + Math.abs(S_x) * W_r;
+      A_rd = 0.5 * (d_ch_out + d_rd_far) * W_r;
+    }
     P_rd = T_rd * Math.sqrt(1 + S_x * S_x);
   }
 
-  const A_total = A_kerb + A_top + A_vg + A_ch + A_rd;
+  const A_total = A_kerb + A_above_kerb + A_top + A_vg + A_ch + A_rd;
   const P_total = P_kerb + P_top + P_vg + P_ch + P_rd;
 
   if (A_total <= 1e-12 || P_total <= 1e-12) {
@@ -632,8 +721,9 @@ function computeFlow(d, p) {
 
   const V = (1 / n_c) * Math.pow(R, 2/3) * Math.pow(S_L, 0.5);
   const Q = V * A_total;
-  // Road-side spread (kerb face projection + channel + road)
-  const spread = dx_kerb + T_ch + T_rd;
+
+  // Total spread: verge (wetted) + kerb top + kerb face + channel + road
+  const spread = T_vg + (depth > H_k ? kbFlat : 0) + dx_kerb + T_ch + T_rd;
   const dV = depth * V;
 
   return { d: depth, A: A_total, P: P_total, R, n_c, V, Q, spread, dV };
@@ -715,37 +805,45 @@ function drawSection(displayDepth_m) {
   if (dd > 0.5) {
     const dChE = S_ch * Wc;
 
-    // Road-side water extent
+    // Road-side water extent (mm)
     let wrx;
     if (dd <= dChE) {
       wrx = dd / S_ch;
     } else {
       const dO = dd - dChE;
-      wrx = Wc + Math.min(dO / S_x, Wr);
+      if (S_x > 0) {
+        wrx = Wc + Math.min(dO / S_x, Wr);
+      } else {
+        // Superelevation or zero: water covers full road
+        wrx = Wc + Wr;
+      }
     }
 
-    // Kerb-side water extent
-    let wLeftX, wLeftY;
+    // Kerb-side water extent (mm)
+    let wLeftX;
     if (dd <= H) {
-      // Below kerb top: water touches kerb face
       const wkx = dd * Math.tan(theta);
       wLeftX = -wkx;
-      wLeftY = dd;
     } else {
-      // Overtopping: water extends over flat top and onto verge
+      // Overtopping
       if (Lv > 0.5) {
-        // Water covers entire verge (verge drops, so always under water)
-        wLeftX = kbBack - Lv;
-        wLeftY = dd;
+        const overtop_mm = dd - H;
+        if (S_v >= 0) {
+          // Verge falls away (deepens) — always fully wet
+          wLeftX = kbBack - Lv;
+        } else {
+          // Verge rises away — partial coverage
+          const absS = Math.abs(S_v);
+          const wetVg = Math.min(Lv, overtop_mm / absS);
+          wLeftX = kbBack - wetVg;
+        }
       } else {
         wLeftX = kbBack;
-        wLeftY = dd;
       }
     }
 
     // Build water polygon
     let wp = [];
-    // Water surface (top edge, left to right)
     wp.push(`${tx(wLeftX)},${ty(dd)}`);
     wp.push(`${tx(wrx)},${ty(dd)}`);
     // Trace road/channel bed back (right to left)
@@ -760,15 +858,13 @@ function drawSection(displayDepth_m) {
     if (dd <= H) {
       wp.push(`${tx(wLeftX)},${ty(dd)}`);
     } else {
-      // Up kerb face to top
       wp.push(`${tx(-dkx)},${ty(H)}`);
-      // Across flat kerb top
       wp.push(`${tx(kbBack)},${ty(H)}`);
-      // Down verge if present
-      if (Lv > 0.5) {
-        wp.push(`${tx(kbBack - Lv)},${ty(H - vgDrop)}`);
+      if (Lv > 0.5 && wLeftX < kbBack - 0.5) {
+        // Trace verge bed to extent of water
+        const vgBedAtLeft = H - vgDrop * (kbBack - wLeftX) / Lv;
+        wp.push(`${tx(wLeftX)},${ty(vgBedAtLeft)}`);
       }
-      // Close at water surface
       wp.push(`${tx(wLeftX)},${ty(dd)}`);
     }
 
@@ -780,12 +876,13 @@ function drawSection(displayDepth_m) {
     html += `<line x1="${wdX}" y1="${ty(0)}" x2="${wdX}" y2="${ty(dd)}" stroke="var(--water)" stroke-width="1.5"/>`;
     html += `<text x="${wdX+6}" y="${(ty(0)+ty(dd))/2}" dominant-baseline="middle" fill="var(--water)" font-family="JetBrains Mono,monospace" font-size="10" font-weight="600">${dd.toFixed(0)} mm</text>`;
 
-    // Road-side spread label
-    const wkxCapped = Math.min(dd, H) * Math.tan(theta);
-    html += `<line x1="${tx(-wkxCapped)}" y1="${ty(dd)-10}" x2="${tx(wrx)}" y2="${ty(dd)-10}" stroke="var(--water)" stroke-width="0.8" opacity="0.6"/>`;
-    const sMid = (tx(-wkxCapped) + tx(wrx)) / 2;
-    const spreadM = (wkxCapped + wrx) / 1000;
-    html += `<text x="${sMid}" y="${ty(dd)-14}" text-anchor="middle" fill="var(--water)" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.8">spread ${spreadM.toFixed(2)} m</text>`;
+    // Spread label (from computeFlow result for accuracy)
+    const r = computeFlow(dd / 1000, p);
+    const spreadPx1 = tx(wLeftX);
+    const spreadPx2 = tx(wrx);
+    html += `<line x1="${spreadPx1}" y1="${ty(dd)-10}" x2="${spreadPx2}" y2="${ty(dd)-10}" stroke="var(--water)" stroke-width="0.8" opacity="0.6"/>`;
+    const sMid = (spreadPx1 + spreadPx2) / 2;
+    html += `<text x="${sMid}" y="${ty(dd)-14}" text-anchor="middle" fill="var(--water)" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.8">spread ${r.spread.toFixed(2)} m</text>`;
   }
 
   // Profile line
