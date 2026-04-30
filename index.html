@@ -143,6 +143,30 @@
   }
   .btn-calc:hover { background:#2b8bee; }
   .btn-calc:active { transform:scale(0.98); }
+  .btn-row { display:flex; gap:0.6rem; flex-wrap:wrap; margin:1.2rem 0; }
+  .btn-share {
+    font-family:'DM Sans',sans-serif;
+    font-size:0.9rem;
+    font-weight:600;
+    padding:0.65rem 1.2rem;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:var(--surface2);
+    color:var(--text);
+    cursor:pointer;
+    transition:background 0.15s;
+  }
+  .btn-share:hover { background:var(--surface1); }
+  .btn-share:active { transform:scale(0.98); }
+  .toast {
+    position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%);
+    background:var(--accent); color:#0a0e14;
+    font-family:'DM Sans',sans-serif; font-weight:600; font-size:0.85rem;
+    padding:0.6rem 1.2rem; border-radius:8px;
+    opacity:0; transition:opacity 0.3s;
+    pointer-events:none; z-index:999;
+  }
+  .toast.show { opacity:1; }
 
   .section-title {
     font-size:0.9rem; font-weight:700; color:var(--text-bright);
@@ -479,7 +503,11 @@
     </div>
   </div>
 
-  <button class="btn-calc" onclick="calculate()">&#9654; Calculate Capacities</button>
+  <div class="btn-row">
+    <button class="btn-calc" onclick="calculate()">&#9654; Calculate Capacities</button>
+    <button class="btn-share" onclick="shareLink()">&#128279; Copy Share Link</button>
+  </div>
+  <div class="toast" id="toast"></div>
 
   <div class="section-title">Cross-Section</div>
   <div class="svg-wrap">
@@ -1056,7 +1084,99 @@ function updateSlider() {
   drawSection(d_mm / 1000);
 }
 
-window.addEventListener('DOMContentLoaded', calculate);
+// ── URL parameter support ──
+
+// Map of URL param keys → { id, type, signId? }
+const URL_PARAMS = [
+  { key: 'hk',   id: 'kerbHeight' },
+  { key: 'ka',   id: 'kerbAngle' },
+  { key: 'cw',   id: 'channelWidth' },
+  { key: 'cs',   id: 'channelSlope' },
+  { key: 'cn',   id: 'channelSurface', type: 'select' },
+  { key: 'vw',   id: 'vergeWidth' },
+  { key: 'vs',   id: 'vergeSlope' },
+  { key: 'vn',   id: 'vergeSurface', type: 'select' },
+  { key: 'vsg',  id: 'vergeSlopeSign', type: 'sign' },
+  { key: 'rx',   id: 'roadCrossfall' },
+  { key: 'rsg',  id: 'roadCrossfallSign', type: 'sign' },
+  { key: 'rw',   id: 'halfRoadWidth' },
+  { key: 'rn',   id: 'roadSurface', type: 'select' },
+  { key: 'sl',   id: 'longSlope' },
+  { key: 'ds',   id: 'depthStep' },
+  { key: 'qd',   id: 'designFlow' },
+];
+
+function loadFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.size === 0) return;
+
+  URL_PARAMS.forEach(({ key, id, type }) => {
+    const val = params.get(key);
+    if (val === null) return;
+
+    if (type === 'sign') {
+      const sign = parseInt(val);
+      if (sign === 1 || sign === -1) setGradeSign(id, sign);
+    } else if (type === 'select') {
+      const el = document.getElementById(id);
+      // Match by value; if not found, leave default
+      for (const opt of el.options) {
+        if (opt.value === val) { el.value = val; break; }
+      }
+    } else {
+      const el = document.getElementById(id);
+      if (el && !isNaN(parseFloat(val))) el.value = val;
+    }
+  });
+}
+
+function buildShareURL() {
+  const params = new URLSearchParams();
+
+  URL_PARAMS.forEach(({ key, id, type }) => {
+    if (type === 'sign') {
+      params.set(key, getGradeSign(id));
+    } else {
+      const el = document.getElementById(id);
+      if (el && el.value !== '') params.set(key, el.value);
+    }
+  });
+
+  return window.location.origin + window.location.pathname + '?' + params.toString();
+}
+
+function shareLink() {
+  const url = buildShareURL();
+  // Update address bar without reload
+  window.history.replaceState(null, '', '?' + url.split('?')[1]);
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard'));
+  } else {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Link copied to clipboard');
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  loadFromURL();
+  calculate();
+});
 </script>
 </body>
 </html>
